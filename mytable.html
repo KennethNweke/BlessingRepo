@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Find Your Table · Bonita &amp; Kenneth</title>
+<meta property="og:title" content="Find Your Table · Bonita &amp; Kenneth">
+<meta property="og:image" content="https://bk2026.love/images/og.jpg">
+<link rel="icon" href="images/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,300&family=Karla:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<!-- Guest list lives in guests.csv (same folder). Columns: name,table  (table = 1 to 8) -->
+
+<header class="page-head">
+  <a class="back" href="index.html">← Back to home</a>
+  <h1>Find <i>Your Table</i></h1>
+  <p>Type your name and we’ll show you where to sit.</p>
+</header>
+
+<main class="wrap">
+  <section class="finder">
+    <label for="q">Your name</label>
+    <input id="q" type="search" placeholder="First or last name" autocomplete="off" autocapitalize="words" enterkeyhint="search" disabled>
+    <p class="msg" id="msg" role="status" aria-live="polite">Loading the guest list…</p>
+    <ul class="res" id="res"></ul>
+  </section>
+
+  <section class="plan">
+    <h2>The tables</h2>
+    <svg id="map" viewBox="0 0 400 236" role="img" aria-label="Eight round tables, numbered 1 to 8"></svg>
+    <p class="note" id="cap">Your table lights up gold once you search.</p>
+    <p class="note">There are 8 tables with 10 main seats each, and extra chairs around and behind the tables for additional guests. This plan is a guide only.</p>
+  </section>
+
+  <section class="help">
+    <h3>Not sure? Just ask.</h3>
+    <p>Our ushers are on hand to help and will gladly show you to your seat.</p>
+  </section>
+</main>
+
+<footer>
+  <img class="logo" src="images/logo.png" alt="">
+  <nav><a href="index.html">Home</a><a href="program.html">Programme</a></nav>
+  Bonita &amp; Kenneth · 07.11.2026
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+let guests = [];
+
+// table plan: 8 tables, 10 seats each
+$('#map').innerHTML = [...Array(8)].map((_, i) => {
+  const x = 50 + 100 * (i % 4), y = 62 + 112 * Math.floor(i / 4);
+  let seats = '';
+  for (let k = 0; k < 10; k++) {
+    const a = k / 10 * 2 * Math.PI - Math.PI / 2;
+    seats += `<circle class="seat" cx="${(x + 40 * Math.cos(a)).toFixed(1)}" cy="${(y + 40 * Math.sin(a)).toFixed(1)}" r="6"/>`;
+  }
+  return `<g class="tbl" id="t${i + 1}">${seats}<circle cx="${x}" cy="${y}" r="27"/><text x="${x}" y="${y}">${i + 1}</text></g>`;
+}).join('');
+
+function parseCSV(t) {
+  const rows = []; let r = [], c = '', q = false;
+  t = t.replace(/^\uFEFF/, '');
+  const end = () => { r.push(c); c = ''; if (r.some(x => x.trim())) rows.push(r); r = []; };
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (q) { if (ch === '"') { if (t[i + 1] === '"') { c += '"'; i++; } else q = false; } else c += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { r.push(c); c = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && t[i + 1] === '\n') i++; end(); }
+    else c += ch;
+  }
+  end();
+  return rows;
+}
+
+function show(n) {
+  document.querySelectorAll('.tbl').forEach(g => g.classList.toggle('on', g.id === 't' + n));
+  $('#cap').textContent = n && $('#t' + n) ? `Table ${n} is highlighted.` : 'Your table lights up gold once you search.';
+  document.querySelectorAll('.res button').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === String(n)));
+}
+
+function search() {
+  const toks = norm($('#q').value).split(' ').filter(Boolean), res = $('#res');
+  res.innerHTML = ''; show(0);
+  if (!toks.join('').length) { $('#msg').textContent = 'Start typing your first or last name.'; return; }
+  const hits = guests.filter(g => { const w = norm(g.name).split(' '); return toks.every(t => w.some(x => x.startsWith(t))); });
+  if (!hits.length) { $('#msg').textContent = 'We couldn’t find that name. Try just your surname, or ask an usher and they’ll help.'; return; }
+  const list = hits.slice(0, 8);
+  $('#msg').textContent = hits.length > 8 ? 'Lots of matches. Keep typing to narrow it down.' : (hits.length > 1 ? 'Tap your name to see your table.' : '');
+  res.innerHTML = list.map(g => {
+    const n = (g.table.match(/\d+/) || [''])[0];
+    return `<li><button type="button" data-t="${n}" aria-pressed="false"><span class="n">${esc(g.name)}</span><span class="t${n ? '' : ' w'}"><small>Table</small>${esc(n || g.table)}</span></button></li>`;
+  }).join('');
+  res.querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.t));
+  show((list[0].table.match(/\d+/) || [0])[0]);
+}
+
+fetch('guests.csv', { cache: 'no-cache' }).then(r => { if (!r.ok) throw 0; return r.text(); }).then(t => {
+  const rows = parseCSV(t), h = rows[0].map(norm);
+  let ni = h.findIndex(x => x.includes('name')), ti = h.findIndex(x => x.includes('table'));
+  const head = ni > -1 && ti > -1;
+  if (!head) { ni = 0; ti = 1; }
+  guests = rows.slice(head ? 1 : 0).map(r => ({ name: (r[ni] || '').trim(), table: (r[ti] || '').trim() })).filter(g => g.name && g.table);
+  $('#q').disabled = false; $('#msg').textContent = 'Start typing your first or last name.';
+  $('#q').addEventListener('input', search);
+}).catch(() => { $('#msg').textContent = 'We couldn’t load the guest list. Please ask an usher and they’ll help you find your table.'; });
+</script>
+</body>
+</html>
